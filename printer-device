@@ -1,0 +1,5 @@
+# This outputs the printer device to use.
+# It being in the path is helpful, so we don't need to source
+# it or know where it is. Our calling scripts just run it and
+# read its output
+echo /dev/ttyACM0

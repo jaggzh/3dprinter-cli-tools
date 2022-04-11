@@ -1,0 +1,14 @@
+#!/bin/bash
+# Uses pocketsphinx's voice recognition
+# Edit `voice-recognize-commands` for info on that
+# Only the last command ($voice_command) is actually used.
+# (The others are dummy phrases to help pocketsphinx differentiate)
+# WARNING: Voice recognition can fail frequently.
+#          You may "go home" a lot more than you want!
+dev="$(printer-device)"
+voice_command="go home"
+
+echo
+echo "Using printer device: $dev"
+sleep 1
+voice-recognize-commands 'the world' 'jump hello' "$voice_command" "echo 'G28 Z' | serial-echo-into '$dev'"

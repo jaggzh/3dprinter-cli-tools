@@ -1,0 +1,70 @@
+#!/bin/bash
+# Simple script to do a command upon voice-recognition of.. a command.
+# It uses pocketsphinx_continuous (which comes from debian's
+#  pocketsphinx package in my case).
+
+# This listens to whatever your default input device is.
+# In Debian, I use the volume control to ensure it's set it to my
+# microphone while this script is running.
+
+# For accuracy, similar phrases should be provided.
+# The LAST phrase on the commandline will trigger the command
+# (which is the very last thing on the command line)
+
+# Example:
+#   voice-recognize-and-command "Useless phrase one" "Useless two" "Useful phrase one" "echo command to execute"
+#
+# This will listen for the three phrases, and when the last one is heard,
+# it'll run the echo command
+
+tmpf="/tmp/voice-$RANDOM"
+umask 077
+all_phrase_threshold='1e-40'
+
+if [[ "$#" < 2 ]]; then
+	echo "Usage: me [one or more strings] [cmd for last string]" >&2
+	echo "Example: me 'more keywords' 'final phrase' 'echo final phrase'"
+	echo "I use more keywords because I think it increases accuracy of the final one"
+	exit
+elif [[ "$#" == 2 ]]; then
+	phr="$1"
+	cmd="$2"
+	printf "%s " pocketsphinx_continuous -keyphrase "$1" \
+		-kws_threshold "$all_phrase_threshold" -inmic yes 2>/dev/null
+	echo
+else
+	args=("$@")
+	phrases=("${args[@]::${#args[@]}-1}")
+	keyphrase="${args[-2]}"
+	cmd="${args[-1]}"
+	printf "We're going to check for these:\n"
+	printf '  %s\n' "${phrases[@]}"
+	printf "On the last we'll execute a command:\n"
+	printf "  Keyphrase: $keyphrase\n";
+	printf "    Command: $cmd\n"
+	printf '%s /1e-30/\n' "${phrases[@]}" > "$tmpf"
+	printf "Temp File: $tmpf\n"
+	printf '\n\n\n'
+	read -p 'Hit enter to start'
+	#pocketsphinx_continuous -kws "$tmpf" -kws_threshold 1e-30 -inmic yes
+	#exit
+	#pocketsphinx_continuous -kws "$tmpf" -kws_threshold 1e-30 -inmic yes 2>/dev/null | while read match; do
+	pocketsphinx_continuous -kws "$tmpf" \
+	          -kws_threshold "$all_phrase_threshold" \
+	          -inmic yes | while read match; do
+		echo -e '\033[36;1mFound: '"$match"'\033[;m'
+		echo "  Looking for {$keyphrase}"
+		if echo "$match" | stdbuf -i0 -o0 grep "^$keyphrase$"; then 
+			echo -e '\033[33;1mFOUND KEYPHRASE!\033[;m'
+			eval "$cmd"
+		fi
+		read -p 'Quit (q)?' -n 1 -t .1 input < /dev/tty
+		echo
+		echo 'Received: '"$input"
+		if [[ "$input" = 'q' ]]; then
+			echo 'User quitted.'
+			rm "$tmpf"
+			exit
+		fi
+	done
+fi

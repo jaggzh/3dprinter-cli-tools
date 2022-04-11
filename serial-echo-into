@@ -1,0 +1,54 @@
+#!/bin/bash
+# This script takes STDIN and sends it to the printer,
+# in a loop, while reading from the printer as well.
+#
+# (Set your printer in `printer-device` script (it should output it))
+#
+# NOTES:
+# * The reason for reading is NOT to give us important feedback
+#   from the printer; it's to prevent the linux serial drivers
+#   from choking up with filled read buffers.
+# * Many printer contollers apparently reset when USB/serial is
+#   connected, so the printer outputs a bunch of stuff at that time.
+#   We're only doing some reading to reduce on that being a buffering
+#   issue.
+dev="$(printer-device)"
+if [[ "$#" -gt 0 ]]; then dev="$1"; shift; fi
+#echo "Dev: $dev" >&2
+baud=115200
+
+# This line isn't needed if your dev is already stty'ed
+# ...we'll assume it's not set.
+stty speed "$baud" time 5 ignbrk -brkint -icrnl -imaxbel -opost -onlcr -isig -icanon -iexten -echo -echoe -echok -echoctl -echoke -F "$dev" >/dev/null
+
+(while read -r uline; do
+	#echo "User input: $uline";
+	printf '> %s\n' "$uline"
+	printf '%s\n' "$uline" >&4;
+	read -t1 devline <&4;
+	printf '< %s\n' "$devline";
+done) 4<> "$dev"
+exit
+
+## Tail will let the read buffer be cleared so the device doesn't
+## get blocked.
+#tail -f "$dev" &
+#tailpid="$!"
+##sleep .1
+
+## Here we're taking whatever you pipe into *this* script
+#while read line; do
+#	echo "User entered: $line"
+#	echo "$line" >> "$dev"
+#	sleep 1
+#	echo "$line" >> "$dev"
+#	sleep 1
+#	echo "$line" >> "$dev"
+#	sleep 1
+#done
+##cat >> "$dev"
+
+## sleep to Give tail time to read the buffer or the output from cat
+## will fail apparently
+#sleep 1
+#kill "$tailpid"
