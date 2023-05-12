@@ -24,9 +24,11 @@ stty speed "$baud" time 5 ignbrk -brkint -icrnl -imaxbel -opost -onlcr -isig -ic
 (while read -r uline; do
 	#echo "User input: $uline";
 	printf '> %s\n' "$uline"
+	for ((i=0; i<20; i++)); do
+		read -t0.1 devline <&4;
+		printf '< %s\n' "$devline";
+	done
 	printf '%s\n' "$uline" >&4;
-	read -t1 devline <&4;
-	printf '< %s\n' "$devline";
 done) 4<> "$dev"
 exit
 
