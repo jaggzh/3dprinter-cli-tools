@@ -1,56 +1,124 @@
 #!/bin/bash
-# This script takes STDIN and sends it to the printer,
-# in a loop, while reading from the printer as well.
+# This script monitors the printer temperature.
+# ...setting its temp before starting if desired, given on commandline
+# Options:
+#   tempC
+#   -1       only output temperature one time, and to stdout
+#   -h       help
+#   -t #     delay (seconds) between monitoring (default is 5s)
+#   -w       loop until the printer temperature reaches the set
+#            temperature and exit, (monitoring and displaying until
+#            done).
+#   -T #     loop until this amount of seconds have passed,
+#            (monitoring and displaying until done).
 #
-# (Set your printer in `printer-device` script (it should output it))
-#
+# Installation: 1. Make a `printer-device` script that outputs the dev
+#                  of your printer OR set your dev directly below.
+#                  * You can also pass it your /dev/blah as an option
+#               2. Set your baud below
 # NOTES:
-# * The reason for reading is NOT to give us important feedback
-#   from the printer; it's to prevent the linux serial drivers
-#   from choking up with filled read buffers.
 # * Many printer contollers apparently reset when USB/serial is
 #   connected, so the printer outputs a bunch of stuff at that time.
-#   We're only doing some reading to reduce on that being a buffering
-#   issue.
-dev="$(printer-device)"
-if [[ "$#" -gt 0 ]]; then dev="$1"; shift; fi
-#echo "Dev: $dev" >&2
+#   We have to read their welcome message.
+
 baud=115200
+dev="$(printer-device)"
+
+# Parse options
+temp_only_once=false
+wait_time=5
+temp_set=false
+temp_value=0
+wait_for_temp=false
+time_limit=0
+
+while getopts ":1ht:wT:" opt; do
+    case ${opt} in
+        1) temp_only_once=true; ;;
+        h)
+            echo "This script monitors the printer temperature."
+            echo "Options:"
+            echo "  tempC"
+            echo "  -1       only output temperature one time, and to stdout"
+            echo "  -h       help"
+            echo "  -t #     delay (seconds) between monitoring (default is 5s)"
+            echo "  -w       loop until the printer temperature reaches the set temperature and exit, (monitoring and displaying until done)."
+            echo "  -T #     loop until this amount of seconds have passed, (monitoring and displaying until done)."
+            exit 0
+            ;;
+        t) wait_time=${OPTARG}; ;;
+        w) wait_for_temp=true; ;;
+        T) time_limit=${OPTARG}; ;;
+        \?) echo "Invalid option: -${OPTARG}" 1>&2; exit 1; ;;
+        :)  echo "Option -${OPTARG} requires an argument." 1>&2;
+            exit 1;
+            ;;
+    esac
+done
+shift $((OPTIND -1))
+
+if [[ "$#" -gt 0 ]]; then dev="$1"; shift; fi
+if [[ "$#" -gt 0 ]]; then temp_value="$1"; temp_set=true; shift; fi
+
+echo "Device: $dev" >&2
+echo "Wait time: $wait_time" >&2
+if $temp_set; then echo "Set temp: $temp_value" >&2; fi
+if $wait_for_temp; then echo "Wait for set temp: $wait_for_temp" >&2; fi
+if [[ $time_limit -gt 0 ]]; then echo "Time limit: $time_limit" >&2; fi
 
 # This line isn't needed if your dev is already stty'ed
 # ...we'll assume it's not set.
 stty speed "$baud" time 5 ignbrk -brkint -icrnl -imaxbel -opost -onlcr -isig -icanon -iexten -echo -echoe -echok -echoctl -echoke -F "$dev" >/dev/null
 
-(while read -r uline; do
-	#echo "User input: $uline";
-	printf '> %s\n' "$uline"
-	for ((i=0; i<20; i++)); do
-		read -t0.1 devline <&4;
-		printf '< %s\n' "$devline";
-	done
-	printf '%s\n' "$uline" >&4;
-done) 4<> "$dev"
-exit
+exec 4<> "$dev"
 
-## Tail will let the read buffer be cleared so the device doesn't
-## get blocked.
-#tail -f "$dev" &
-#tailpid="$!"
-##sleep .1
+# Read welcome message
+timeout=3 # Initial wait
+while read -t $timeout -r welcome <&4; do
+    printf 'Welcome: %s\n' "$welcome" >&2
+    timeout=.1
+done
 
-## Here we're taking whatever you pipe into *this* script
-#while read line; do
-#	echo "User entered: $line"
-#	echo "$line" >> "$dev"
-#	sleep 1
-#	echo "$line" >> "$dev"
-#	sleep 1
-#	echo "$line" >> "$dev"
-#	sleep 1
-#done
-##cat >> "$dev"
+# Check if read timed out
+if [ $? -ne 0 ]; then
+    echo "Read timed out, assuming end of welcome message" >&2
+else
+	echo "End of welcome message" >&2
+fi
 
-## sleep to Give tail time to read the buffer or the output from cat
-## will fail apparently
-#sleep 1
-#kill "$tailpid"
+# Set the temperature if specified
+if $temp_set; then
+    printf 'M104 S%d\n' "$temp_value" >&4
+fi
+cmd_gettemp="M105"
+
+# Now read/write to the device
+start_time=$(date +%s)
+while read -r uline; do
+    printf '> %s\n' "$uline" >&2
+    printf '%s\n' "$uline" >&4
+    for ((i=0; i<20; i++)); do
+        read -t 0.1 devline <&4
+        printf '< %s\n' "$devline" >&2
+        # Check the current temperature
+        if [[ "$devline" =~ T:([0-9\.]+) ]]; then
+            cur_temp=${BASH_REMATCH[1]}
+            echo "Current temperature: $cur_temp" >&2
+            # Check if we should exit because the temperature has been reached
+            if $wait_for_temp && (( $(echo "$cur_temp >= $temp_value" | bc -l) )); then
+                echo "Target temperature reached" >&2
+                exit 0
+            fi
+        fi
+        # Check if we should exit because the time limit has been reached
+        if [[ $time_limit -gt 0 && $(($(date +%s) - start_time)) -ge $time_limit ]]; then
+            echo "Time limit reached" >&2
+            exit 0
+        fi
+        sleep "$wait_time"
+    done
+    # Check if we should only output the temperature once
+    if $temp_only_once; then
+        exit 0
+    fi
+done
