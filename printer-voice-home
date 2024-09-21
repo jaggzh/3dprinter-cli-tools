@@ -11,4 +11,7 @@ voice_command="go home"
 echo
 echo "Using printer device: $dev"
 sleep 1
-voice-recognize-commands 'the world' 'jump hello' "$voice_command" "echo 'G28 Z' | serial-echo-into '$dev'"
+# G28 Z        # Home
+# M140 S102    # Hotbed to 102C
+# M104 S226 T0 # Printhead to 226C
+voice-recognize-commands 'dogs in space' 'the world is our oyster' 'jump hello' "$voice_command" "echo 'G28 Z' | serial-echo-into '$dev'"

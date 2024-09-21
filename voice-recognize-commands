@@ -37,6 +37,7 @@ else
 	phrases=("${args[@]::${#args[@]}-1}")
 	keyphrase="${args[-2]}"
 	cmd="${args[-1]}"
+	cmd="echo -e 'M105\nM140 S102\nM104 S226 T0\nG28 Z' | serial-echo-into '/dev/ttyACM0'"
 	printf "We're going to check for these:\n"
 	printf '  %s\n' "${phrases[@]}"
 	printf "On the last we'll execute a command:\n"
@@ -45,7 +46,9 @@ else
 	printf '%s /1e-30/\n' "${phrases[@]}" > "$tmpf"
 	printf "Temp File: $tmpf\n"
 	printf '\n\n\n'
-	read -p 'Hit enter to start'
+	printf 'Starting in 3 seconds...'
+	sleep 3
+	#read -p 'Hit enter to start'
 	#pocketsphinx_continuous -kws "$tmpf" -kws_threshold 1e-30 -inmic yes
 	#exit
 	#pocketsphinx_continuous -kws "$tmpf" -kws_threshold 1e-30 -inmic yes 2>/dev/null | while read match; do
@@ -57,6 +60,8 @@ else
 		if echo "$match" | stdbuf -i0 -o0 grep "^$keyphrase$"; then 
 			echo -e '\033[33;1mFOUND KEYPHRASE!\033[;m'
 			eval "$cmd"
+		else
+			tone 220 .1
 		fi
 		read -p 'Quit (q)?' -n 1 -t .1 input < /dev/tty
 		echo
@@ -65,6 +70,12 @@ else
 			echo 'User quitted.'
 			rm "$tmpf"
 			exit
+		elif [[ $input = '' ]]; then
+			:
+			# ignore
+		else
+			echo "Unknown command: {$input}"
 		fi
+		match=''
 	done
 fi
